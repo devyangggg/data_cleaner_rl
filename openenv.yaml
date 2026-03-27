@@ -1,0 +1,22 @@
+name: pipeline-debug-env
+version: "0.1.0"
+description: "An RL environment where an agent debugs broken data pipelines by issuing fix commands"
+author: "devyang"
+tasks:
+  - id: easy
+    description: "Fix type and null bugs in a sales dataset"
+    difficulty: easy
+  - id: medium
+    description: "Fix a bad join between orders and customers tables"
+    difficulty: medium
+  - id: hard
+    description: "Trace and fix silent value corruption in a revenue pipeline"
+    difficulty: hard
+observation_space:
+  type: dict
+action_space:
+  type: dict
+tags:
+  - data-engineering
+  - debugging
+  - openenv

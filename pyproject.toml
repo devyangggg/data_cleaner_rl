@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.backends.legacy:BuildBackend"
+
+[project]
+name = "pipeline-debug-env"
+version = "0.1.0"
+description = "An RL environment where an agent debugs broken data pipelines"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "pandas",
+    "numpy",
+    "openai",
+    "httpx",
+    "python-dotenv",
+    "openenv-core @ git+https://github.com/meta-pytorch/OpenEnv.git",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "httpx"]
+
+[project.scripts]
+server = "server.app:main"
