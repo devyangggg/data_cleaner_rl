@@ -42,22 +42,27 @@ Open `http://localhost:7860/web`.
 
 ```bash
 export API_BASE_URL=https://router.huggingface.co/v1
-export MODEL_NAME=HuggingFaceH4/zephyr-7b-beta
+export MODEL_NAME=meta-llama/Meta-Llama-3-8B-Instruct
 export HF_TOKEN=hf_your_token_here
 export ENV_URL=http://localhost:7860
 
-python inference.py
+py inference.py
 ```
 
 `inference.py` runs all three tasks (`easy`, `medium`, `hard`) and prints per-step traces with deterministic rationale from the environment info payload.
+
+Notes:
+- If `MODEL_NAME` / `API_BASE_URL` are missing, `inference.py` uses safe defaults.
+- If `ENV_URL` points to `localhost` and the server is down, `inference.py` auto-starts `uvicorn src.server:app`.
+- If LLM calls fail, the script falls back to deterministic actions instead of crashing.
 
 ## Benchmarking
 
 Run:
 
 ```bash
-python benchmark.py --agent heuristic
-python benchmark.py --agent llm
+py benchmark.py --agent heuristic
+py benchmark.py --agent llm
 ```
 
 Outputs:
@@ -159,7 +164,7 @@ observation_space:
 ## Tests
 
 ```bash
-pytest tests/ -v
+py -m pytest tests/ -v
 ```
 
 Current tests validate reset/step behavior, invalid command handling, reward determinism, episode termination, and no-change penalty behavior.
@@ -167,12 +172,20 @@ Current tests validate reset/step behavior, invalid command handling, reward det
 ## Demo UI
 
 ```bash
-python demo.py
+py demo.py
 ```
 
 This launches a Gradio UI for manual interaction with the environment.
 
-For live demos, use **Auto-play heuristic** in the UI to show a full episode trajectory timeline instantly.
+For live demos, use:
+- **Auto-play heuristic** for an instant agent trajectory timeline
+- **Train RL (Live Plot)** for real-time reward/success curves inside the UI
+
+## Troubleshooting
+
+- `WinError 10061` in `inference.py`: run with `ENV_URL=http://localhost:7860`, or let auto-start handle local server boot.
+- `403/402` from Hugging Face router: token lacks provider permissions or has no credits.
+- `model_not_supported`: switch `MODEL_NAME` to a provider-enabled model (default already set to `meta-llama/Meta-Llama-3-8B-Instruct`).
 
 ## Submission Checklist
 
