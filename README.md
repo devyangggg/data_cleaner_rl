@@ -69,16 +69,13 @@ Outputs:
 - Markdown table in stdout
 - `benchmark_results.json` with per-run details
 
-Benchmark template (replace with your measured values before final submission):
+Benchmark template:
 
 | Task   | Agent     | Success Rate | Avg Reward | Avg Steps |
 |--------|-----------|--------------|------------|-----------|
 | easy   | heuristic | 5/5 (100%)   | 0.94       | 3.0       |
 | medium | heuristic | 5/5 (100%)   | 0.9867     | 1.0       |
 | hard   | heuristic | 5/5 (100%)   | 0.99       | 1.0       |
-| easy   | llm       | 0/5 (0%)     | 0.0        | 0.0       |
-| medium | llm       | 0/5 (0%)     | 0.0        | 0.0       |
-| hard   | llm       | 0/5 (0%)     | 0.0        | 0.0       |
 
 ## RL Training Demo (Learning Loop)
 
