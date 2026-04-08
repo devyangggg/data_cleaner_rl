@@ -1,22 +1,20 @@
-name: pipeline-debug-env
-version: "0.1.0"
-description: "An RL environment where an agent debugs broken data pipelines by issuing fix commands"
-author: "devyang"
+name: data-cleaner-rl
+version: "1.0.0"
+description: "RL environment for debugging broken pandas data pipelines"
+tags: [data-engineering, pandas, etl, debugging]
 tasks:
   - id: easy
-    description: "Fix type and null bugs in a sales dataset"
-    difficulty: easy
+    description: "Single dtype mismatch bug"
+    max_steps: 10
   - id: medium
-    description: "Fix a bad join between orders and customers tables"
-    difficulty: medium
+    description: "Null values and join errors"
+    max_steps: 15
   - id: hard
-    description: "Trace and fix silent value corruption in a revenue pipeline"
-    difficulty: hard
-observation_space:
-  type: dict
+    description: "Multiple compounding ETL bugs"
+    max_steps: 20
 action_space:
-  type: dict
-tags:
-  - data-engineering
-  - debugging
-  - openenv
+  type: discrete_parameterized
+  commands: [cast_column, fill_nulls, fix_join, rename_column, drop_column, sort_values]
+observation_space:
+  type: structured
+  fields: [current_schema, expected_schema, preview_rows, diff_summary]

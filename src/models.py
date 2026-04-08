@@ -1,45 +1,61 @@
-"""Pydantic models for the Pipeline Debug Environment."""
+"""Pydantic models for OpenEnv-compatible pipeline debugging APIs."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
-class Observation(BaseModel):
-    """What the agent sees after each step."""
-
-    task_id: str
-    step: int
-    schema: dict[str, str] = Field(
-        description="Column name → dtype string for the current dataframe"
-    )
-    preview: list[dict[str, Any]] = Field(
-        description="First 5 rows of the current dataframe"
-    )
-    expected_schema: dict[str, str] = Field(
-        description="Column name → dtype string for the expected dataframe"
-    )
-    diff_summary: str = Field(
-        description="Human-readable summary of differences between current and expected"
-    )
-    last_action_result: str = Field(
-        default="success",
-        description="One of: success, invalid, no_change",
-    )
-
-
-class Action(BaseModel):
-    """A single fix command issued by the agent."""
+class PipelineAction(BaseModel):
+    """Single command emitted by an agent."""
 
     command: str
-    parameters: dict[str, Any] = Field(default_factory=dict)
+    params: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def support_legacy_parameters_key(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "params" not in data and "parameters" in data:
+            data = dict(data)
+            data["params"] = data.get("parameters", {})
+        return data
 
 
-class Reward(BaseModel):
-    """Reward signal returned after each step."""
+class PipelineObservation(BaseModel):
+    """Structured observation returned by reset/step."""
 
-    score: float = Field(ge=0.0, le=1.0)
-    delta: float = Field(description="Change from last step's score")
-    reason: str
+    task_id: str
+    current_schema: dict[str, str]
+    expected_schema: dict[str, str]
+    preview_rows: list[dict[str, Any]]
+    diff_summary: str
+    diff_items: list[dict[str, Any]] = Field(default_factory=list)
+    step_count: int
+    is_terminal: bool
+    last_action_result: str = "success"
+
+
+class StepResult(BaseModel):
+    """OpenEnv-style step response."""
+
+    observation: PipelineObservation
+    reward: float
+    done: bool
+    info: dict[str, Any] = Field(default_factory=dict)
+
+
+class EpisodeState(BaseModel):
+    """Serializable state snapshot for debugging and clients."""
+
+    episode_id: str
+    task_id: str
+    step_count: int
+    total_reward: float
+    started_at: str
+    done: bool
+
+
+class CurriculumStats(BaseModel):
+    current_level: str
+    recent_history: list[dict[str, Any]] = Field(default_factory=list)

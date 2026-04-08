@@ -3,24 +3,27 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.backends.legacy:BuildBackend"
 
 [project]
-name = "pipeline-debug-env"
-version = "0.1.0"
-description = "An RL environment where an agent debugs broken data pipelines"
+name = "data-cleaner-rl"
+version = "1.0.0"
+description = "OpenEnv-compatible RL environment for broken pandas pipelines"
 requires-python = ">=3.11,<3.14"
 dependencies = [
-    "fastapi",
-    "uvicorn",
-    "pydantic",
-    "pandas",
-    "numpy",
-    "openai",
-    "httpx",
-    "python-dotenv",
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+    "pydantic>=2.0.0",
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "openai>=1.0.0",
+    "httpx>=0.25.0",
+    "python-dotenv>=1.0.0",
+    "gradio>=4.0.0",
+    "torch>=2.0.0",
+    "matplotlib>=3.8.0",
     "openenv-core @ git+https://github.com/meta-pytorch/OpenEnv.git",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "httpx"]
+dev = ["pytest>=7.0.0", "httpx>=0.25.0"]
 
 [project.scripts]
-server = "server.app:main"
+server = "src.server:main"

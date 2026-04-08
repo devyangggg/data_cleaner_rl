@@ -1,109 +1,154 @@
-"""Inference script — runs a rule-based agent through all 3 pipeline debugging tasks."""
+"""LLM-driven inference runner for Data Cleaner RL."""
 
 from __future__ import annotations
 
 import json
 import os
-import time
+from typing import Any
 
 import httpx
+from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
 
-ENV_BASE_URL = os.getenv("ENV_BASE_URL", "http://localhost:8000")
+API_BASE_URL = os.environ["API_BASE_URL"]
+MODEL_NAME = os.environ["MODEL_NAME"]
+HF_TOKEN = os.environ.get("HF_TOKEN", "hf-no-key")
+ENV_URL = os.environ.get("ENV_URL", "http://localhost:7860")
+MAX_STEPS_DEFAULT = int(os.environ.get("MAX_STEPS", "30"))
 
-TASKS = ["easy", "medium", "hard"]
-
-RULE_BASED_ACTIONS = {
-    "easy": [
-        {"command": "cast_column",     "parameters": {"column": "revenue", "dtype": "float"}},
-        {"command": "fix_date_format", "parameters": {"column": "date", "format": "%d-%m-%Y"}},
-        {"command": "fill_nulls",      "parameters": {"column": "units_sold", "value": 0}},
-    ],
-    "medium": [
-        {"command": "fix_join",        "parameters": {"left_key": "customer_code", "right_key": "customer_id"}},
-        {"command": "drop_duplicates", "parameters": {"subset": ["order_id"]}},
-    ],
-    "hard": [
-        {"command": "apply_transform", "parameters": {
-            "column": "converted_amount",
-            "expression": "row['converted_amount'] / 1.23 if row['currency'] == 'USD' else x"
-        }},
-    ],
+COMMANDS = {
+    "cast_column": ["column", "dtype"],
+    "fill_nulls": ["column", "value"],
+    "fix_date_format": ["column", "format"],
+    "fix_join": ["left_key", "right_key"],
+    "drop_duplicates": ["subset"],
+    "apply_transform": ["column", "expression"],
+    "revert_step": [],
+    "rename_column": ["old_name", "new_name"],
+    "drop_column": ["column"],
+    "sort_values": ["by", "ascending"],
 }
 
+SYSTEM_PROMPT = (
+    "You are a data pipeline repair agent. "
+    "Return only one valid JSON object with keys 'command' and 'params'. "
+    "No markdown, no prose."
+)
 
-def run_task(task_id: str) -> float:
-    print(f"\n{'='*60}")
-    print(f"  TASK: {task_id.upper()}")
-    print(f"{'='*60}")
+client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
-    resp = httpx.post(f"{ENV_BASE_URL}/reset", params={"task_id": task_id}, timeout=30)
-    resp.raise_for_status()
-    obs = resp.json()
 
-    actions = RULE_BASED_ACTIONS[task_id]
-    terminated = False
-    final_score = 0.0
-    step = 0
+def _extract_action(text: str) -> dict[str, Any]:
+    text = text.strip()
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise
+        parsed = json.loads(text[start : end + 1])
 
-    while not terminated:
-        if step < len(actions):
-            action = actions[step]
-        else:
-            break
+    command = parsed["command"]
+    params = parsed.get("params", parsed.get("parameters", {}))
+    if not isinstance(params, dict):
+        raise ValueError("params must be an object")
+    return {"command": command, "params": params}
 
-        print(f"\n  Step {step + 1} | Action: {json.dumps(action)}")
 
+def call_llm(observation: dict[str, Any], total_reward: float, retries: int = 2) -> dict[str, Any]:
+    payload = {
+        "task_id": observation.get("task_id"),
+        "diff_items": observation.get("diff_items", []),
+        "diff_summary": observation.get("diff_summary"),
+        "current_schema": observation.get("current_schema", {}),
+        "expected_schema": observation.get("expected_schema", {}),
+        "step_count": observation.get("step_count", 0),
+        "current_reward": round(total_reward, 4),
+        "available_commands": COMMANDS,
+        "response_format": {"command": "<name>", "params": {"key": "value"}},
+    }
+    user_prompt = (
+        "Given this observation, choose exactly one next repair action.\n"
+        "Use diff_items as the primary signal because it is structured; use diff_summary only as backup context.\n"
+        "Return only JSON object with keys command and params.\n"
+        f"Observation:\n{json.dumps(payload, indent=2)}"
+    )
+
+    last_error: Exception | None = None
+    for _ in range(retries + 1):
         try:
-            resp = httpx.post(
-                f"{ENV_BASE_URL}/step",
-                json=action,
-                timeout=30,
+            resp = client.chat.completions.create(
+                model=MODEL_NAME,
+                temperature=0,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
             )
-            resp.raise_for_status()
-            result = resp.json()
-        except Exception as e:
-            print(f"  [Env Error] {e}")
-            break
+            text = resp.choices[0].message.content or ""
+            return _extract_action(text)
+        except Exception as exc:
+            last_error = exc
+    raise RuntimeError(f"LLM call failed after retries: {last_error}")
 
-        obs = result["observation"]
-        reward = result["reward"]
-        terminated = result["terminated"]
-        info = result["info"]
+
+def run_task(task_id: str) -> dict[str, Any]:
+    reset = httpx.post(f"{ENV_URL}/reset", params={"task_id": task_id}, timeout=30)
+    reset.raise_for_status()
+    observation = reset.json()
+
+    total_reward = 0.0
+    steps = 0
+    done = False
+
+    print(f"\n=== TASK {task_id.upper()} ===")
+
+    while not done and steps < MAX_STEPS_DEFAULT:
+        action = call_llm(observation, total_reward)
+        step_resp = httpx.post(f"{ENV_URL}/step", json=action, timeout=30)
+        step_resp.raise_for_status()
+        result = step_resp.json()
+
+        observation = result["observation"]
+        reward = float(result["reward"])
+        done = bool(result["done"])
+        info = result.get("info", {})
+        total_reward = reward
+        steps += 1
 
         print(
-            f"  -> reward={reward:.4f} "
-            f"result={obs['last_action_result']} | "
-            f"{info.get('reason', '')}"
+            f"step={steps:02d} action={action} reward={reward:.4f} "
+            f"result={info.get('action_result', observation.get('last_action_result'))} "
+            f"rationale={info.get('rationale', '')}"
         )
 
-        final_score = reward
-        step += 1
+    success = bool(observation.get("is_terminal", done) and "match" in observation.get("diff_summary", "").lower())
+    if observation.get("diff_summary") == "Dataframes match perfectly":
+        success = True
 
-    print(f"\n  Final score for {task_id}: {final_score:.4f}")
-    return final_score
+    return {
+        "task": task_id,
+        "success": success,
+        "total_reward": round(total_reward, 4),
+        "steps": steps,
+    }
 
 
 def main() -> None:
-    scores: dict[str, float] = {}
-    start_time = time.time()
+    results = []
+    for task in ["easy", "medium", "hard"]:
+        results.append(run_task(task))
 
-    for task_id in TASKS:
-        score = run_task(task_id)
-        scores[task_id] = score
-
-    elapsed = time.time() - start_time
-
-    print(f"\n{'='*60}")
-    print("  BASELINE RESULTS")
-    print(f"{'='*60}")
-    for task_id, score in scores.items():
-        print(f"  {task_id:>8s}: {score:.4f}")
-    print(f"  {'average':>8s}: {sum(scores.values()) / len(scores):.4f}")
-    print(f"  elapsed: {elapsed:.1f}s")
-    print(f"{'='*60}")
+    print("\n=== FINAL SUMMARY ===")
+    for row in results:
+        status = "SUCCESS" if row["success"] else "FAIL"
+        print(
+            f"task={row['task']:<6} status={status:<7} "
+            f"reward={row['total_reward']:.4f} steps={row['steps']}"
+        )
 
 
 if __name__ == "__main__":
