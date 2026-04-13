@@ -11,8 +11,16 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
-from openai import OpenAI
-from dotenv import load_dotenv
+try:
+    from openai import OpenAI
+except Exception:  # pragma: no cover
+    OpenAI = None  # type: ignore[assignment]
+
+try:
+    from dotenv import load_dotenv
+except Exception:  # pragma: no cover
+    def load_dotenv() -> bool:  # type: ignore[no-redef]
+        return False
 
 load_dotenv()
 
@@ -41,7 +49,7 @@ SYSTEM_PROMPT = (
     "No markdown, no prose."
 )
 
-client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
+client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN) if OpenAI is not None else None
 _SERVER_PROCESS: subprocess.Popen[bytes] | None = None
 
 FALLBACK_ACTIONS = {
@@ -85,6 +93,8 @@ def _extract_action(text: str) -> dict[str, Any]:
 
 
 def call_llm(observation: dict[str, Any], total_reward: float, retries: int = 2) -> dict[str, Any]:
+    if client is None:
+        raise RuntimeError("openai client unavailable")
     payload = {
         "task_id": observation.get("task_id"),
         "diff_items": observation.get("diff_items", []),
